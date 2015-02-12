@@ -1,0 +1,107 @@
+global with sharing class VFChartingHelper {
+
+    public VFChartingHelper(ApexPages.StandardController ctl) {}  
+    
+    @RemoteAction
+    public static String sendToolingQueryRequest(String queryStr){  
+        string instanceURL = System.URL.getSalesforceBaseUrl().getHost().remove('-api' );        
+        String toolingendpoint = 'https://'+instanceURL+'/services/data/v32.0/tooling/';
+        
+     HttpRequest req = new HttpRequest();  
+     req.setEndpoint(toolingendpoint+'query/?q='+queryStr);  
+     /*Set authorization by using current users session Id*/  
+     req.setHeader('Authorization', 'Bearer ' + UserInfo.getSessionID());  
+     req.setHeader('Content-Type', 'application/json');      
+     req.setMethod('GET');  
+     Http http = new Http();  
+     HTTPResponse res = http.send(req);  
+     return res.getBody();  
+   }      
+
+   @RemoteAction  
+   public static String fetchCodeCoverage(){  
+     return sendToolingQueryRequest('SELECT+NumLinesCovered,ApexClassOrTriggerId,ApexClassOrTrigger.Name,NumLinesUncovered+FROM+ApexCodeCoverage');  
+   }  
+    
+   @RemoteAction  
+   public static String fetchOrgCoverage(){  
+     return sendToolingQueryRequest('SELECT+PercentCovered+FROM+ApexOrgWideCoverage');  
+   }    
+    
+    @RemoteAction
+    public static Map<String, Id> getRecordTypeIds() {
+        Map<String, Id> recordTypeIds = new Map<String, Id>();
+        List<RecordType> recordTypes = new List<RecordType>([SELECT Id, Name FROM RecordType WHERE SobjectType = 'Opportunity']);
+        for ( RecordType r: recordTypes ) {
+            recordTypeIds.put(r.Name, r.Id);
+        }         
+        return recordTypeIds;                   
+    }
+    
+	// Return an array with a list of all the week indexes used for looking up values on the StockMap
+    @RemoteAction
+    public static List<String> getWeeks() {
+		List<Stock_Tracking__c> Dates = new List<Stock_Tracking__c>([SELECT Inbound_Date__c FROM Stock_Tracking__c 
+                                                                     WHERE Account_Site__c = 'EQU' AND Product__r.Brand__c = 'Rotel'
+                                                                     AND Product__r.Track_Stock__c = True
+                                                                     AND (Inbound_Date__c <= TODAY OR Inbound_Date__c = NEXT_N_DAYS: 35) 
+                                                                     ORDER BY Inbound_Date__c ASC]);    
+        Datetime firstWeek = (Datetime)Dates.get(0).Inbound_Date__c;
+        List<String> weeks = new List<String> {};
+        
+        for (Integer i = 0; i < 6; i++) {
+            if( firstWeek.month() == firstWeek.addDays(7).month()) {
+                weeks.add(firstWeek.format('MMM') + ' Week ' + firstWeek.format('W'));
+                firstWeek = firstWeek.addDays(7);
+            } else {
+                weeks.add(firstWeek.format('MMM') + ' Week ' + firstWeek.format('W'));
+                while(firstWeek.month() != firstWeek.addDays(7).month()) {
+                	firstWeek = firstWeek.addDays(1);    
+                }
+            }
+        }
+        return weeks;
+    }    
+    
+    
+    @RemoteAction
+    public static string getFieldMetaData(string fieldName) {
+        //list<map<string,object>> results = new list<map<string,object>>();
+        //list<string> results = new list<string>();
+        
+        fieldName = fieldName.replace('__c','');
+        string instanceURL = System.URL.getSalesforceBaseUrl().getHost().remove('-api' );
+        
+        HttpRequest req = new HttpRequest();
+        req.setHeader('Authorization', 'Bearer ' + UserInfo.getSessionID());
+        req.setHeader('Content-Type', 'application/json');
+        
+        String toolingendpoint = 'https://'+instanceURL+'/services/data/v32.0/tooling/';
+        
+        //query for custom fields
+        toolingendpoint += 'query/?q=Select+id,DeveloperName,FullName+from+CustomField+where+DeveloperName+=+\''+fieldName+'\'';
+        req.setEndpoint(toolingendpoint);
+        req.setMethod('GET');
+        
+        Http h = new Http();
+        HttpResponse res = h.send(req);
+        system.debug(res.getBody()); 
+        
+        //convert the original data structure into a map of objects. The data we want is in the records property of this object
+        //map<string,object> reqData = (map<string,object>) JSON.deserialize(res.getBody(), map<string,object>.class);
+        
+        //now create a list of objects from the records property. This serialize/deserialize trick is the only way I know to convert a generic object
+        //into something else when the source data is 'salesforce Map encoded' (no quotes around field names or values, parenthesis to denote open and close, etc)
+        //list<object> fieldData = (list<object>) JSON.deserializeUntyped(JSON.serialize(reqData.get('records')));    
+        
+        //iterate over each object in the list and create a map of string to object out of it and add it to the list
+        //for(object thisObj : fieldData)
+        //{
+        //    map<string, object> thisFieldData =  (map<string, object>) json.deserializeUntyped(JSON.serialize(thisObj));
+        //    results.add(thisFieldData);
+        //}
+   
+        return (res.getBody());    
+    }    
+    
+}
