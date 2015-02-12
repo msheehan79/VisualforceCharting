@@ -1,0 +1,371 @@
+<apex:page standardController="Report" extensions="VFChartingHelper" sidebar="false" >
+    <apex:includeScript value="{!$Resource.HelperFunctionsJS}"/>
+    <apex:includeScript value="{!$Resource.ReportFiltersJS}"/>
+    <script type="text/javascript" src="https://www.google.com/jsapi"></script>
+    <script type="text/javascript" src="https://ajax.googleapis.com/ajax/libs/jquery/1.11.2/jquery.min.js"></script>
+    <script src="https://ajax.googleapis.com/ajax/libs/jqueryui/1.11.2/jquery-ui.min.js"></script>
+    
+    <link rel="stylesheet" href="https://ajax.googleapis.com/ajax/libs/jqueryui/1.11.2/themes/smoothness/jquery-ui.css" />
+    <apex:stylesheet value="{!$Resource.ReportStyle}"/>
+    
+    <script type="text/javascript">
+        google.load("visualization", "1", {packages:["corechart", "table"]});
+        google.setOnLoadCallback(function() {
+            init();             
+            drawChart(null)
+        });
+    
+	    function init() {
+            // Uses the Reporting API to obtain information on the report and builds available filters based on this data.
+            var reportData = getReportInfo('{!$Api.Session_ID}', '{!$CurrentPage.parameters.id}');
+            // Some shortcut variables here
+            var aggregateInfo = reportData.reportExtendedMetadata.aggregateColumnInfo;
+            var aggregates = reportData.reportMetadata.aggregates;            
+            
+            createFilters(reportData);          
+        	createValueSelect(aggregateInfo, aggregates);
+                
+			// Add some event listeners below
+            $('#submit').click(function(e) {
+                // Place holder for the text that will display active filters
+                var activeFiltersHtml = '';
+                // Reset the array
+                filtersArray.length = 0;
+
+                $.each($('div.filter'), function(k, v) { 
+                    var selectedValues = $(this).find('.value').val();
+                    if(selectedValues && selectedValues != '' && selectedValues != 'CUSTOM') {
+                        var fieldName = $(this).find('.value').attr('id');
+                        var oper = $(this).find('.operator').val();
+                        // Concatenate multiselect values
+                        if (typeof(selectedValues) != "string") {
+                            selectedValues = selectedValues.join(",");
+                        }
+                        // Add the filter label and values for display
+                        activeFiltersHtml += $('label[for=\'' + fieldName + '\']').text().slice(0, -2) + ' ' + oper + ' ' + selectedValues + '<br />';
+                        // Add the filters to the JSON array for submitting
+                        filtersArray.push({'column':fieldName.substring(14),'operator':oper,'value':selectedValues});
+                    }
+                });
+                
+                // Update the page with the active filters list
+                $('#activeFilters').html(activeFiltersHtml);
+                var aggregateField = Number($('#reportDataField').val());
+                drawChart(filtersArray, aggregateField);
+			});
+                
+        }
+    
+		// Primary function
+        function drawChart(filters, aggregateField = 0) {     
+            // Set filters here if any filters are passed in as parameters
+            if(filters != null) {
+                var metadata = { 
+                    reportMetadata : {
+                        reportFilters : filters
+                    }
+                };
+            }
+            
+            // Fetch the JSON data representing the report
+            var jsonData = JSON.parse($.ajax({
+                type:'POST',
+                url: '/services/data/v29.0/analytics/reports/{!$CurrentPage.parameters.id}',
+                data: JSON.stringify(metadata),
+                beforeSend: function(xhr) {xhr.setRequestHeader('Authorization', 'Bearer {!$Api.Session_ID}');},
+                dataType:'json',
+                contentType: 'application/json; charset=utf-8',
+                async: false
+            }).responseText);
+            console.log(jsonData);
+            
+            // Some shortcut variables here
+            var aggregateInfo = jsonData.reportExtendedMetadata.aggregateColumnInfo;
+            var groupingInfo = jsonData.reportExtendedMetadata.groupingColumnInfo;
+            var groupingsDown = jsonData.reportMetadata.groupingsDown;
+            var groupingsAcross = jsonData.reportMetadata.groupingsAcross;
+            var aggregates = jsonData.reportMetadata.aggregates;
+            
+            // create the array using the JSON data and report
+            /* var dataArray = [[
+                groupingInfo[groupingsDown[0].name].label,
+                aggregateInfo[aggregates[0]].label,
+                aggregateInfo[aggregates[1]].label
+            ]];
+            
+            // Iterate through summary data
+            $.each(jsonData.groupingsDown.groupings, function(indexLevel1, groupingLevel1) {
+                dataArray.push([
+                    groupingLevel1.label,
+                    jsonData.factMap[indexLevel1.toString()+ "!T"].aggregates[0].value,
+                    jsonData.factMap[indexLevel1.toString()+ "!T"].aggregates[1].value,
+                ]);
+            }); */
+   
+            // create the array using the JSON data and report
+            var dataArray = [[
+                groupingInfo[groupingsDown[0].name].label,
+                groupingInfo[groupingsAcross[0].name].label,
+                aggregateInfo[aggregates[0]].label,
+                aggregateInfo[aggregates[1]].label
+            ]];
+            
+            dataArray.length = 0;
+            var newArray = [];
+            newArray.push(groupingInfo[groupingsDown[0].name].label);
+            $.each(jsonData.groupingsAcross.groupings, function(indexLevel2, groupingLevel2) {
+            	newArray.push(groupingLevel2.label);
+            });
+            
+            dataArray.push(newArray);
+            
+
+            // Iterate through summary data
+            $.each(jsonData.groupingsDown.groupings, function(indexLevel1, groupingLevel1) {
+                var tempArray = [];
+                tempArray.push(groupingLevel1.label);
+                $.each(jsonData.groupingsAcross.groupings, function(indexLevel2, groupingLevel2) {
+                	tempArray.push(jsonData.factMap[indexLevel1.toString()+"!"+indexLevel2.toString()].aggregates[0].value);
+                });
+                dataArray.push(tempArray);
+            });              
+            
+            // Iterate through summary data
+            /*$.each(jsonData.groupingsDown.groupings, function(indexLevel1, groupingLevel1) {
+                $.each(jsonData.groupingsAcross.groupings, function(indexLevel2, groupingLevel2) {
+                	dataArray.push([
+                    	groupingLevel1.label,
+                        groupingLevel2.label,
+                    	jsonData.factMap[indexLevel1.toString()+"!"+indexLevel2.toString()].aggregates[0].value,
+                		jsonData.factMap[indexLevel1.toString()+"!"+indexLevel2.toString()].aggregates[1].value,
+                	]);
+                });
+            });          */          
+                console.log(dataArray);    
+            // build the dataTable and set Chart options
+            var data = google.visualization.arrayToDataTable(dataArray);
+                    
+                        var data1 = google.visualization.arrayToDataTable([
+          ['Series', '2013', '2014'],
+          ['800D2',  1000,      2222],
+          ['800D2',  1170,      2222],
+          ['A600',  660,       2333],
+          ['A600',  1030,      2322]
+        ]);                    
+                    
+                    console.log(data);
+                    console.log(data1);
+                    
+            // Set number format as needed
+            var hAxisFormat = '';
+            if (aggregateInfo[aggregates[aggregateField]].dataType == 'currency') {
+                hAxisFormat = '¤###,###,###;(¤###,###,###)';
+            }        
+            var options = {
+                title: jsonData.attributes.reportName,
+                isStacked: true,
+                //vAxis: {title: groupingInfo[groupingsDown[0].name].label},
+                //hAxis: {
+                //          title: aggregateInfo[aggregates[aggregateField]].label,
+                //           format: hAxisFormat
+                //       }
+            };
+            
+            // Check and format any Currency fields as needed
+                    //data = formatCurrency(jsonData, data);
+
+            // Set a dataView with a subset of the data to be used in the Chart
+            var view = new google.visualization.DataView(data);
+                //view.setColumns([0, aggregateField + 1]);
+                    //view.setColumns([1, 2, 3]);
+                
+            // Create and draw the chart
+            var chart = new google.visualization.BarChart(document.getElementById('chart'));
+            chart.draw(data, options);
+        }    
+                       
+    
+    
+    
+    
+        function init_old() {
+            /*
+            Visualforce.remoting.Manager.invokeAction(
+                '{!$RemoteAction.VFChartingHelper.getRecordTypeIds}',
+                function(result,event) {
+                    console.log(result);
+      
+                });   */
+            //getRecordTypeIds();
+            //return;
+            
+            // Uses the Tooling API to query for the custom field IDs, this is needed for custom URL filters if running the report this way
+            getCustomFieldIds('{!$Api.Session_ID}');
+            
+            // Uses the Reporting API to obtain information on the report and builds available filters based on this data.
+            var reportData = getReportInfo('{!$Api.Session_ID}', '{!$CurrentPage.parameters.id}');
+            createFilters(reportData);          
+            
+            // Add some event listeners below
+            $('#submit').click(function(e) {
+                // Place holder for the text that will display active filters
+                var activeFiltersHtml = '';
+                // Reset the array
+                filtersArray.length = 0;
+
+                $.each($('div.filter'), function(k, v) { 
+                    var selectedValues = $(this).find('.value').val();
+                    if(selectedValues && selectedValues != '' && selectedValues != 'CUSTOM') {
+                        var fieldName = $(this).find('.value').attr('id');
+                        var oper = $(this).find('.operator').val();
+                        // Concatenate multiselect values
+                        if (typeof(selectedValues) != "string") {
+                            selectedValues = selectedValues.join(",");
+                        }
+                        // Add the filter label and values for display
+                        activeFiltersHtml += $('label[for=\'' + fieldName + '\']').text().slice(0, -2) + ' ' + oper + ' ' + selectedValues + '<br />';
+                        // Add the filters to the JSON array for submitting
+                        filtersArray.push({'column':fieldName.substring(14),'operator':oper,'value':selectedValues});
+                    }
+                });                
+                
+                
+                // Update the page with the active filters list
+                $('#activeFilters').html(activeFiltersHtml);
+                drawChart(filtersArray);
+            });
+ 
+            $('#runreport').click(function(e) {
+                // This holds the URL parameters
+                var filtersList = '?';
+                $.each($(filtersArray), function(k, v) {
+                    // If there is a period in the fieldname it is a custom field and need to lookup its ID to use in the URL
+                    if ( v.column.indexOf('.') !== -1 ) {
+                        // Lookup the ID and create the URL
+                        var customField = getObjects(fieldIds, 'FullName', v.column);
+                        filtersList += 'pc'+k+'='+customField[0].Id.substring(0, 15)+'&pn'+k+'='+'eq'+'&pv'+k+'='+v.value+'&';
+                    } else if ( v.column.indexOf('RECORDTYPE') !== -1 ) {
+                        //getRecordTypeIds();
+                        
+                    } else {
+                        filtersList += 'pc'+k+'='+v.column+'&pn'+k+'='+'eq'+'&pv'+k+'='+v.value+'&';
+                    }
+                });
+                url = '/{!$CurrentPage.parameters.id}' + filtersList;
+                window.open(url,'_blank');                
+            });
+
+        }
+
+
+        // Primary function
+        function drawChart_old(filters) {            
+            // Set filters here if any filters are passed in as parameters
+            if(filters != null) {
+                var metadata = { 
+                    reportMetadata : {
+                        reportFilters : filters
+                    }
+                };
+            }
+            
+            // Fetch the JSON data representing the report
+            var jsonData = JSON.parse($.ajax({
+                type:'POST',
+                url: '/services/data/v29.0/analytics/reports/{!$CurrentPage.parameters.id}',
+                data: JSON.stringify(metadata),
+                beforeSend: function(xhr) {xhr.setRequestHeader('Authorization', 'Bearer {!$Api.Session_ID}');},
+                dataType:'json',
+                contentType: 'application/json; charset=utf-8',
+                async: false
+            }).responseText);
+            console.log(jsonData);
+            
+            // create the array using the JSON data and report
+            var dataArray = [[
+                jsonData.reportExtendedMetadata.groupingColumnInfo[jsonData.reportMetadata.groupingsDown[0].name].label,
+                jsonData.reportExtendedMetadata.aggregateColumnInfo[jsonData.reportMetadata.aggregates[0]].label,
+                jsonData.reportExtendedMetadata.aggregateColumnInfo[jsonData.reportMetadata.aggregates[1]].label
+            ]];
+            
+            // Iterate through summary data
+            $.each(jsonData.groupingsDown.groupings, function(indexLevel1, groupingLevel1) {
+                dataArray.push([
+                    groupingLevel1.label,
+                    jsonData.factMap[indexLevel1.toString()+ "!T"].aggregates[0].value,
+                    jsonData.factMap[indexLevel1.toString()+ "!T"].aggregates[1].value,
+                ]);
+            });
+            
+            // build the dataTable and set Chart options
+            var data = google.visualization.arrayToDataTable(dataArray);
+            var options = {
+                title: jsonData.attributes.reportName,
+                vAxis: {title: jsonData.reportExtendedMetadata.groupingColumnInfo[jsonData.reportMetadata.groupingsDown[0].name].label},
+                hAxis: {
+                           title: jsonData.reportExtendedMetadata.aggregateColumnInfo[jsonData.reportMetadata.aggregates[1]].label,
+                           format: '¤###,###,###;(¤###,###,###)'
+                       }
+            };
+            
+            // Check and format any Currency fields as needed
+            data = formatCurrency(jsonData, data);
+
+            // Set a dataView with a subset of the data to be used in the Chart
+            var view = new google.visualization.DataView(data);
+            view.setColumns([0, 2]);
+                
+            // Create and draw the chart
+            var chart = new google.visualization.BarChart(document.getElementById('chart'));
+            chart.draw(view, options);
+        
+            // Calculate totals for the Table total row
+            footer = [['Total', 1],[getSum(data, 1), 1],[getSum(data, 2),1]];
+            
+            //data.addRow(['Total', getSum(data, 1), getSum(data, 2)]);
+            //formatter.format(data, 2);            
+            var tableView = new google.visualization.DataView(data);
+            
+            var table = new google.visualization.Table(document.getElementById('table'));
+            // Add event listeners to the Table to add the footer (total) row.
+            google.visualization.events.addListener(table, 'ready', addFooter);
+            google.visualization.events.addListener(table, 'sort', addFooter);
+            google.visualization.events.addListener(table, 'page', addFooter);                
+            table.draw(tableView, {sortColumn: 1, allowHtml: true});    
+        };    
+                   
+	   function getRecordTypeIds() {
+    		Visualforce.remoting.Manager.invokeAction(
+        	'{!$RemoteAction.VFChartingHelper.getRecordTypeIds}',
+        	function(result,event) {
+            	console.log(result);
+        	});
+    	} 
+                   
+
+             /*function getFieldData(field) {
+                $('#output').html('<div class="loading">Loading...</div>');
+                //var weeks = new Array();
+                Visualforce.remoting.Manager.invokeAction(
+                    '{!$RemoteAction.VFChartingHelper.getFieldMetaData}',
+                    field,
+                    function(result,event) {
+                        result = result.replace(/&(lt|gt|quot);/g, '"');
+                        var parsedResult = jQuery.parseJSON(result);  
+                        console.log(parsedResult);
+                        //weeks = result;    
+                    });
+                } */
+                   
+                   
+    </script>
+
+    <div id="filtersList"></div>
+    <div id="filters"></div>
+    <div id="values"></div>
+    <button id="submit">Submit</button>
+    <button id="runreport" style="display:none">Run Report</button>
+    <div id="activeFilters"></div>
+    <div id="chart" style="width: 900px; height: 500px;"></div>
+    <div id="table"></div>
+</apex:page>
