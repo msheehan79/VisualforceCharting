@@ -1,0 +1,61 @@
+
+div.filter1 {
+    border: 1px solid green;
+    display: inline;
+    margin: 10px;
+    padding: 10px;
+}
+
+.operator1 {
+    vertical-align: top;
+    padding: 5px;
+}
+
+.value1 {
+    vertical-align: top;
+    padding: 5px;
+}
+
+div.filter {
+    background-color: #e1e1e1;
+    position: relative;
+    min-height: 145px;
+    border-radius: 10px;
+    border: 4px double darkgrey;
+    width: 675px;
+    padding: 8px;
+    margin: 10px;
+}
+
+div.filter select {
+    border: 1px inset grey;
+    background-color: white;
+    color: #4d4d4d;
+    font-family: 'oswaldregular', Calibri;
+    text-transform: uppercase;    
+    font-size: 16px;
+    padding: 1px;
+    cursor:pointer;
+    vertical-align: top;    
+    -webkit-appearance: none;
+}
+
+div.filter select.operator {
+	position: absolute;
+    left: 175px;
+}
+
+div.filter select.value {
+	position: absolute;
+    left: 350px;
+    min-width: 250px;
+}
+
+div.filter label {
+    padding-left: 12px;
+    line-height: 30px;
+    font-family: 'oswaldregular',Calibri;
+    text-transform: uppercase;    
+    color: #000000;
+    font-size: 16px;
+}
